@@ -1,5 +1,4 @@
 # Service d'administration pour le serveur TCP
-# Ce service gère les opérations administratives comme l'ajout et la suppression d'utilisateurs administratifs.
 
 def add_admin_user(username):
     """Ajoute un utilisateur administrateur."""

@@ -1,5 +1,4 @@
 # Moteur de jeu pour gérer la logique du jeu
-# Inclut la gestion des rôles et des déplacements des joueurs.
 
 class GameEngine:
     def __init__(self):
