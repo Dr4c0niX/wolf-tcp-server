@@ -2,8 +2,21 @@ import json
 import socketserver
 from app.game_engine import GameEngine
 from app.utils.json_parser import parse_request
-from app.utils.logger import logger, log_request
 import uuid
+import logging
+
+# Configure logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Create logger instance
+logger = logging.getLogger('wolf-game')
+
+def log_request(request_id, message):
+    """Log a request with its ID"""
+    logger.info(f"[{request_id}] {message}")
 
 class TCPRequestHandler(socketserver.BaseRequestHandler):
     def handle(self):
