@@ -4,5 +4,5 @@ DATABASE_CONFIG = {
 
 TCP_SERVER_CONFIG = {
     'host': 'localhost',
-    'port': 8888
+    'port': 9999
 }
