@@ -100,8 +100,7 @@ def run_server(host="localhost", port=8888):
         while True:
             client_socket, addr = server_socket.accept()
             print(f"Connexion établie avec {addr}")
-            client_thread = Thread(target=handle_client, args=(client_socket, addr))
-            client_thread.start()
+            handle_client(client_socket, addr)
 
 if __name__ == "__main__":
     run_server()
