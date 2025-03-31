@@ -1,4 +1,4 @@
 requests==2.31.0  # Si nécessaire pour votre code
 flask
 flask-sqlalchemy
-psycopg2-binary
+psycopg2-binary==2.9.5

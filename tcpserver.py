@@ -2,7 +2,8 @@
 import socket
 import json
 import psycopg2
-from threading import Thread
+from psycopg2.extras import RealDictCursor
+import threading
 
 # Connexion à la base de données
 conn = psycopg2.connect(
@@ -12,97 +13,87 @@ conn = psycopg2.connect(
     host="db",
     port="5432"
 )
-cursor = conn.cursor()
+cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-def handle_client(conn, addr):
-    try:
-        data = conn.recv(4096).decode('utf-8')
+def handle_client(conn):
+    while True:
+        data = conn.recv(1024).decode('utf-8')
         if not data:
-            return
+            break
 
         request = json.loads(data)
-        action = request.get("action")
-        parameters = request.get("parameters", {})
+        response = {}
 
-        if action == "list_parties":
+        if request['action'] == 'list_parties':
             cursor.execute("SELECT id_party, title_party FROM parties WHERE is_started = FALSE AND is_finished = FALSE")
             parties = cursor.fetchall()
-            parties_data = {"id_parties": [party[0] for party in parties]}
             response = {
-                "status": "OK",
-                "response": parties_data
+                "id_parties": [party['id_party'] for party in parties],
+                "parties_info": {str(party['id_party']): {"title_party": party['title_party']} for party in parties}
             }
 
-        elif action == "subscribe":
-            player = parameters.get("player")
-            id_party = parameters.get("id_party")
+        elif request['action'] == 'party_details':
+            party_id = request['party_id']
+            cursor.execute("""
+                SELECT p.id_party, p.title_party, p.grid_size, p.max_players, p.max_turns, p.turn_duration,
+                       COUNT(CASE WHEN r.role_name = 'villager' THEN 1 END) as villagers_count,
+                       COUNT(CASE WHEN r.role_name = 'werewolf' THEN 1 END) as werewolves_count,
+                       COUNT(pip.id_player) as current_players
+                FROM parties p
+                LEFT JOIN players_in_parties pip ON p.id_party = pip.id_party
+                LEFT JOIN roles r ON pip.id_role = r.id_role
+                WHERE p.id_party = %s
+                GROUP BY p.id_party
+            """, (party_id,))
+            party = cursor.fetchone()
+            response = dict(party) if party else {"error": "Partie non trouvée"}
+
+        elif request['action'] == 'subscribe':
+            player = request['player']
+            id_party = request['id_party']
+            role_preference = request.get("role_preference", "villageois")
 
             cursor.execute("SELECT id_player FROM players WHERE pseudo = %s", (player,))
             result = cursor.fetchone()
             if result is None:
                 cursor.execute("INSERT INTO players (pseudo) VALUES (%s) RETURNING id_player", (player,))
-                id_player = cursor.fetchone()[0]
+                id_player = cursor.fetchone()['id_player']
             else:
-                id_player = result[0]
+                id_player = result['id_player']
 
-            cursor.execute("INSERT INTO players_in_parties (id_party, id_player, id_role) VALUES (%s, %s, (SELECT id_role FROM roles WHERE role_name = 'villager' LIMIT 1))", (id_party, id_player))
+            role_name = 'villager' if role_preference == 'villageois' else 'werewolf'
+            cursor.execute("SELECT id_role FROM roles WHERE role_name = %s", (role_name,))
+            id_role = cursor.fetchone()['id_role']
+
+            cursor.execute("INSERT INTO players_in_parties (id_party, id_player, id_role) VALUES (%s, %s, %s)",
+                          (id_party, id_player, id_role))
             conn.commit()
 
             response = {
                 "status": "OK",
                 "response": {
-                    "role": "villager",
+                    "role": role_preference,
                     "id_player": id_player
                 }
             }
-
-        elif action == "create_solo_game":
-            player_name = parameters.get("player_name")
-            role_preference = parameters.get("role_preference")
-
-            cursor.execute("SELECT id_player FROM players WHERE pseudo = %s", (player_name,))
-            result = cursor.fetchone()
-            if result is None:
-                cursor.execute("INSERT INTO players (pseudo) VALUES (%s) RETURNING id_player", (player_name,))
-                id_player = cursor.fetchone()[0]
-            else:
-                id_player = result[0]
-
-            cursor.execute("INSERT INTO parties (title_party, is_started, is_finished) VALUES ('Solo Game', FALSE, FALSE) RETURNING id_party")
-            id_party = cursor.fetchone()[0]
-
-            cursor.execute("INSERT INTO players_in_parties (id_party, id_player, id_role) VALUES (%s, %s, (SELECT id_role FROM roles WHERE role_name = %s LIMIT 1))", (id_party, id_player, role_preference))
-            conn.commit()
-
-            response = {
-                "status": "OK",
-                "response": {
-                    "id_party": id_party,
-                    "id_player": id_player
-                }
-            }
-
-        else:
-            response = {"status": "ERROR", "message": "Action inconnue"}
 
         conn.sendall(json.dumps(response).encode('utf-8'))
 
-    except Exception as e:
-        print(f"Erreur lors du traitement de la requête: {e}")
-    finally:
-        conn.close()
+    conn.close()
 
-def run_server(host="0.0.0.0", port=8888):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-        server_socket.bind((host, port))
-        server_socket.listen()
-        print(f"Serveur TCP démarré sur {host}:{port}")
 
-        while True:
-            client_socket, addr = server_socket.accept()
-            print(f"Connexion établie avec {addr}")
-            client_thread = Thread(target=handle_client, args=(client_socket, addr))
-            client_thread.start()
+def start_server(host='0.0.0.0', port=8888):  # Port corrigé à 8888
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((host, port))
+    server.listen(5)
+    print(f"Server listening on {host}:{port}")
+
+    while True:
+        client_socket, addr = server.accept()
+        print(f"Accepted connection from {addr}")
+        client_thread = threading.Thread(target=handle_client, args=(client_socket,))
+        client_thread.daemon = True
+        client_thread.start()
 
 if __name__ == "__main__":
-    run_server()
+    start_server()
