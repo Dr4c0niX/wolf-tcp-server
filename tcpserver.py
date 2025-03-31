@@ -1,3 +1,4 @@
+#wolf-tcp-server/tcpserver.py
 import socket
 import json
 import psycopg2
@@ -91,7 +92,7 @@ def handle_client(conn, addr):
     finally:
         conn.close()
 
-def run_server(host="localhost", port=8888):
+def run_server(host="0.0.0.0", port=8888):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind((host, port))
         server_socket.listen()
@@ -100,7 +101,8 @@ def run_server(host="localhost", port=8888):
         while True:
             client_socket, addr = server_socket.accept()
             print(f"Connexion établie avec {addr}")
-            handle_client(client_socket, addr)
+            client_thread = Thread(target=handle_client, args=(client_socket, addr))
+            client_thread.start()
 
 if __name__ == "__main__":
     run_server()
